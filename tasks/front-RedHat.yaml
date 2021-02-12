@@ -6,23 +6,33 @@
 
   - set_fact: NFS_SERVICE="nfs-server"
     when: ansible_distribution_major_version >= "7"
+ 
+  - name: Ensure rpcbind is stopped
+    systemd:
+      name: rpcbind
+      enabled: no
+      masked: yes
 
-  - name: Lock NFS ports RH8
+  - name: Ensure rpcbind.socket is stopped
+    systemd:
+      name: rpcbind.socket
+      enabled: no
+      masked: yes
+
+  - name: NFS configure RH8
     ini_file:
       path: /etc/nfs.conf
       section: "{{item.section}}"
       option: "{{item.option}}"
       value: "{{item.value}}"
     with_items:
-    - {'section': 'lockd', 'option': 'port', 'value': '32803'}
-    - {'section': 'lockd', 'option': 'udp-port', 'value': '32769'}
-    - {'section': 'mountd', 'option': 'port', 'value': '892'}
+    - {'section': 'nfsd', 'option': 'vers3', 'value': 'no'}
     notify:
-     - restart rpcbind
      - restart nfs
     when: ansible_distribution_major_version >=  "8"
+    register: nfs_config8
 
-  - name: Lock NFS ports RH7
+  - name: NFS configure RH7
     lineinfile:
       dest: /etc/sysconfig/nfs
       regexp: "{{item.regexp}}"
@@ -30,10 +40,23 @@
       state: present
       create: yes
     with_items:
-    - {'regexp': 'LOCKD_TCPPORT', 'line': 'LOCKD_TCPPORT=32803'}
-    - {'regexp': 'LOCKD_UDPPORT', 'line': 'LOCKD_UDPPORT=32769'}
-    - {'regexp': 'MOUNTD_PORT', 'line': 'MOUNTD_PORT=892'}
+    - {'regexp': 'RPCNFSDARGS', 'line': 'RPCNFSDARGS="-N 2 -N 3"'}
     notify:
-     - restart rpcbind
      - restart nfs
     when: ansible_distribution_major_version <=  "7"
+    register: nfs_config7
+      
+  - name: Open Firewalld nfs port
+    firewalld:
+      service: nfs
+      permanent: yes
+      state: enabled
+    ignore_errors: yes      
+
+  - name: Open Firewalld nfs port
+    firewalld:
+      port: 892/tcp
+      permanent: yes
+      state: enabled
+    ignore_errors: yes
+
